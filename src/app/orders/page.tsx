@@ -3,7 +3,20 @@
 import { useState } from "react";
 import { AddBurgerModal, Navbar, Receipt } from "@/components";
 
-const orders = [
+type Order = {
+  id: string;
+  item: string;
+  status: "In Progress" | "Ready" | "Queued";
+  ingredients: string[];
+};
+
+type BurgerFormValues = {
+  id: string;
+  item: string;
+  ingredients: string[];
+};
+
+const initialOrders: Order[] = [
   {
     id: "1001",
     item: "Classic Burger",
@@ -40,11 +53,88 @@ const orders = [
     status: "Queued",
     ingredients: ["Lettuce", "Onions", "Pickles", "Cheddar", "BBQ Sauce"],
   },
-] as const;
+];
+
+const normalizeQrValue = (value: string) => value.replace(/^qr\s*#?\s*/i, "").trim();
+
+const getNextAvailableOrderId = (orders: Order[]) => {
+  const numericIds = orders
+    .map((order) => Number.parseInt(order.id, 10))
+    .filter((id) => Number.isFinite(id));
+
+  const currentMax = numericIds.length > 0 ? Math.max(...numericIds) : 1000;
+  return String(currentMax + 1);
+};
+
+const getSafeOrderId = (orders: Order[], desiredId: string, excludedId?: string) => {
+  const normalizedId = normalizeQrValue(desiredId);
+  const takenIds = new Set(orders.filter((order) => order.id !== excludedId).map((order) => order.id));
+
+  if (normalizedId && !takenIds.has(normalizedId)) {
+    return normalizedId;
+  }
+
+  let nextId = getNextAvailableOrderId(orders);
+  while (takenIds.has(nextId)) {
+    nextId = String(Number.parseInt(nextId, 10) + 1);
+  }
+
+  return nextId;
+};
 
 export default function OrdersPage() {
+  const [orders, setOrders] = useState<Order[]>(initialOrders);
   const [isAddBurgerModalOpen, setIsAddBurgerModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+
+  const selectedOrder = orders.find((order) => order.id === selectedOrderId);
+
+  const closeModal = () => {
+    setIsAddBurgerModalOpen(false);
+    setSelectedOrderId(null);
+  };
+
+  const handleCreate = (values: BurgerFormValues) => {
+    setOrders((currentOrders) => [
+      ...currentOrders,
+      {
+        id: getSafeOrderId(currentOrders, values.id),
+        item: values.item,
+        status: "Queued",
+        ingredients: values.ingredients,
+      },
+    ]);
+  };
+
+  const handleUpdate = (values: BurgerFormValues) => {
+    if (!selectedOrderId) {
+      return;
+    }
+
+    setOrders((currentOrders) => {
+      const nextId = getSafeOrderId(currentOrders, values.id, selectedOrderId);
+
+      return currentOrders.map((order) =>
+        order.id === selectedOrderId
+          ? {
+              ...order,
+              id: nextId,
+              item: values.item,
+              ingredients: values.ingredients,
+            }
+          : order,
+      );
+    });
+  };
+
+  const handleDelete = () => {
+    if (!selectedOrderId) {
+      return;
+    }
+
+    setOrders((currentOrders) => currentOrders.filter((order) => order.id !== selectedOrderId));
+  };
 
   return (
     <main className="min-h-screen bg-white px-6 py-8 text-zinc-900 lg:px-10">
@@ -52,6 +142,7 @@ export default function OrdersPage() {
         <Navbar
           onBuildBurgerClick={() => {
             setModalMode("create");
+            setSelectedOrderId(null);
             setIsAddBurgerModalOpen(true);
           }}
         />
@@ -70,8 +161,9 @@ export default function OrdersPage() {
               item={order.item}
               status={order.status}
               ingredients={order.ingredients}
-              onEdit={() => {
+              onEdit={(id) => {
                 setModalMode("edit");
+                setSelectedOrderId(id);
                 setIsAddBurgerModalOpen(true);
               }}
             />
@@ -82,7 +174,19 @@ export default function OrdersPage() {
       <AddBurgerModal
         isOpen={isAddBurgerModalOpen}
         mode={modalMode}
-        onClose={() => setIsAddBurgerModalOpen(false)}
+        initialValues={
+          modalMode === "edit" && selectedOrder
+            ? {
+                id: selectedOrder.id,
+                item: selectedOrder.item,
+                ingredients: selectedOrder.ingredients,
+              }
+            : undefined
+        }
+        onCreate={handleCreate}
+        onUpdate={handleUpdate}
+        onDelete={handleDelete}
+        onClose={closeModal}
       />
     </main>
   );

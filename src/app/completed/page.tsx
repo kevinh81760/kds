@@ -32,7 +32,7 @@ export default function CompletedPage() {
         <section className="grid grid-cols-1 gap-3 border-b border-dotted border-zinc-300 pb-4 md:grid-cols-[1fr_auto] md:items-end">
           <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Completed</h1>
           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-            Total: 24
+            Total: {completedOrders.length}
           </p>
         </section>
 

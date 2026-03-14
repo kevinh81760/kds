@@ -3,7 +3,7 @@ type ReceiptProps = {
   item: string;
   status: string;
   ingredients: readonly string[];
-  onEdit?: () => void;
+  onEdit?: (id: string) => void;
 };
 
 const getStatusDotClassName = (status: string) => {
@@ -39,7 +39,7 @@ export function Receipt({ id, item, status, ingredients, onEdit }: ReceiptProps)
         <h2 className="text-xl font-semibold leading-tight text-zinc-900">{item}</h2>
         <button
           type="button"
-          onClick={onEdit}
+          onClick={() => onEdit?.(id)}
           className="justify-self-end rounded-md border border-zinc-300 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-700 transition-colors hover:bg-zinc-100"
         >
           Edit

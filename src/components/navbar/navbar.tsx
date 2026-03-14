@@ -10,6 +10,7 @@ type NavbarProps = {
 const navItems = [
   { label: "Orders", href: "/orders" },
   { label: "Completed", href: "/completed" },
+  { label: "Inventory", href: "/inventory" },
 ] as const;
 export function Navbar({ onBuildBurgerClick }: NavbarProps) {
   const pathname = usePathname();
