@@ -24,3 +24,51 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+:root {
+  --skeleton-soft: #f3f4f6;
+  --skeleton-base: #e5e7eb;
+  --skeleton-strong: #d4d4d8;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+.kds-skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.5rem;
+}
+
+.kds-skeleton::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.45), transparent);
+  transform: translateX(-120%);
+  animation: skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+.kds-skeleton--soft {
+  background: var(--skeleton-soft);
+}
+
+.kds-skeleton--base {
+  background: var(--skeleton-base);
+}
+
+.kds-skeleton--strong {
+  background: var(--skeleton-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kds-skeleton::before {
+    animation: none;
+  }
+}

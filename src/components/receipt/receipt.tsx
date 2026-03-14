@@ -1,38 +1,16 @@
 type ReceiptProps = {
   id: string;
   item: string;
-  status: string;
   ingredients: readonly string[];
   onEdit?: (id: string) => void;
 };
 
-const getStatusDotClassName = (status: string) => {
-  const normalizedStatus = status.trim().toLowerCase();
-
-  if (normalizedStatus === "in progress") {
-    return "bg-yellow-400";
-  }
-
-  if (normalizedStatus === "queued") {
-    return "bg-zinc-400";
-  }
-
-  return "bg-green-500";
-};
-
-export function Receipt({ id, item, status, ingredients, onEdit }: ReceiptProps) {
+export function Receipt({ id, item, ingredients, onEdit }: ReceiptProps) {
   return (
     <article className="grid min-h-70 h-full grid-rows-[auto_auto_1fr] gap-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
       <div className="grid grid-cols-[1fr_auto] items-start gap-3">
         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
           QR #{id}
-        </p>
-        <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
-          <span
-            className={`h-2.5 w-2.5 rounded-full ${getStatusDotClassName(status)}`}
-            aria-hidden="true"
-          />
-          <span>{status}</span>
         </p>
       </div>
       <div className="grid grid-cols-[1fr_auto] items-center gap-3">

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { AddBurgerModal, Navbar, Receipt } from "@/components";
+import { useEffect, useState } from "react";
+import { AddBurgerModal, Navbar, Receipt, Skeleton } from "@/components";
 
 type Order = {
   id: string;
@@ -16,44 +16,25 @@ type BurgerFormValues = {
   ingredients: string[];
 };
 
-const initialOrders: Order[] = [
-  {
-    id: "1001",
-    item: "Classic Burger",
-    status: "In Progress",
-    ingredients: ["Lettuce", "Tomatoes", "Onions", "Pickles", "Gochujang", "Ketchup"],
-  },
-  {
-    id: "1002",
-    item: "Cheese Burger",
-    status: "Ready",
-    ingredients: ["Lettuce", "Onions", "Pickles", "American Cheese", "Ketchup"],
-  },
-  {
-    id: "1003",
-    item: "Double Burger",
-    status: "Ready",
-    ingredients: ["Tomatoes", "Onions", "Pickles", "Gochujang", "Ketchup"],
-  },
-  {
-    id: "1004",
-    item: "Veggie Burger",
-    status: "In Progress",
-    ingredients: ["Lettuce", "Tomatoes", "Onions", "Pickles", "Vegan Aioli"],
-  },
-  {
-    id: "1005",
-    item: "Bacon Burger",
-    status: "Ready",
-    ingredients: ["Lettuce", "Tomatoes", "Onions", "Pickles", "Bacon", "Ketchup"],
-  },
-  {
-    id: "1006",
-    item: "BBQ Burger",
-    status: "Queued",
-    ingredients: ["Lettuce", "Onions", "Pickles", "Cheddar", "BBQ Sauce"],
-  },
-];
+type CreateBurgerPayload = {
+  orderId: string;
+  burgerType: string;
+  ingredients: string[];
+  trayNumber: number;
+};
+
+type ActiveOrdersResponse = {
+  success?: boolean;
+  error?: string;
+  orders?: Order[];
+};
+
+type DeleteOrderResponse = {
+  success?: boolean;
+  error?: string;
+};
+
+const initialOrders: Order[] = [];
 
 const normalizeQrValue = (value: string) => value.replace(/^qr\s*#?\s*/i, "").trim();
 
@@ -82,27 +63,133 @@ const getSafeOrderId = (orders: Order[], desiredId: string, excludedId?: string)
   return nextId;
 };
 
+const getNextTrayNumber = (orders: Order[]) => orders.length + 1;
+
+const OrderReceiptSkeleton = () => (
+  <article
+    className="grid min-h-70 h-full grid-rows-[auto_auto_1fr] gap-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm"
+  >
+    <div className="grid grid-cols-[1fr_auto] items-start gap-3">
+      <Skeleton className="h-3 w-22" tone="strong" />
+      <Skeleton className="h-7 w-12 rounded-md" />
+    </div>
+    <div className="space-y-3">
+      <Skeleton className="h-6 w-4/5" tone="strong" />
+      <Skeleton className="h-3 w-2/5" tone="soft" />
+    </div>
+    <div className="border-t border-dotted border-zinc-300 pt-3">
+      <Skeleton className="h-3 w-24" tone="soft" />
+      <div className="mt-3 space-y-2">
+        <Skeleton className="h-3 w-10/12" />
+        <Skeleton className="h-3 w-8/12" tone="soft" />
+        <Skeleton className="h-3 w-9/12" />
+        <Skeleton className="h-3 w-7/12" tone="soft" />
+      </div>
+    </div>
+  </article>
+);
+
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>(initialOrders);
+  const [isLoading, setIsLoading] = useState(true);
   const [isAddBurgerModalOpen, setIsAddBurgerModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 
   const selectedOrder = orders.find((order) => order.id === selectedOrderId);
 
+  const fetchActiveOrders = async () => {
+    const response = await fetch("/api/orders/active", {
+      method: "POST",
+    });
+
+    const rawText = await response.text();
+    let data: ActiveOrdersResponse | null = null;
+    try {
+      data = JSON.parse(rawText) as ActiveOrdersResponse;
+    } catch {
+      data = null;
+    }
+
+    if (!data) {
+      throw new Error(
+        `Failed to load active orders. Non-JSON response received (status=${response.status}).`,
+      );
+    }
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.error ?? "Failed to load active orders.");
+    }
+
+    setOrders(data.orders ?? []);
+  };
+
   const closeModal = () => {
     setIsAddBurgerModalOpen(false);
     setSelectedOrderId(null);
   };
 
-  const handleCreate = (values: BurgerFormValues) => {
+  useEffect(() => {
+    const loadActiveOrders = async () => {
+      try {
+        await fetchActiveOrders();
+      } catch (error) {
+        console.error("Load active orders failed", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    void loadActiveOrders();
+  }, []);
+
+  const handleCreateBurger = async (payload: CreateBurgerPayload) => {
+    const response = await fetch("/api/orders/create", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = (await response.json()) as {
+      error?: string;
+      success?: boolean;
+      code?: string;
+      details?: string;
+      hint?: string;
+      sentParams?: unknown;
+    };
+    if (!response.ok || !data.success) {
+      const debugMessage = [
+        data.error ?? "Failed to create burger order.",
+        data.code ? `code=${data.code}` : null,
+        data.details ? `details=${data.details}` : null,
+        data.hint ? `hint=${data.hint}` : null,
+      ]
+        .filter(Boolean)
+        .join(" | ");
+
+      throw new Error(debugMessage);
+    }
+  };
+
+  const handleCreate = async (values: BurgerFormValues) => {
+    const payload: CreateBurgerPayload = {
+      orderId: getSafeOrderId(orders, values.id),
+      burgerType: values.item,
+      ingredients: values.ingredients,
+      trayNumber: getNextTrayNumber(orders),
+    };
+
+    await handleCreateBurger(payload);
     setOrders((currentOrders) => [
       ...currentOrders,
       {
-        id: getSafeOrderId(currentOrders, values.id),
-        item: values.item,
+        id: payload.orderId,
+        item: payload.burgerType,
         status: "Queued",
-        ingredients: values.ingredients,
+        ingredients: payload.ingredients,
       },
     ]);
   };
@@ -128,9 +215,22 @@ export default function OrdersPage() {
     });
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!selectedOrderId) {
       return;
+    }
+
+    const response = await fetch("/api/orders/delete", {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ orderId: selectedOrderId }),
+    });
+
+    const data = (await response.json()) as DeleteOrderResponse;
+    if (!response.ok || !data.success) {
+      throw new Error(data.error ?? "Failed to delete order.");
     }
 
     setOrders((currentOrders) => currentOrders.filter((order) => order.id !== selectedOrderId));
@@ -149,25 +249,26 @@ export default function OrdersPage() {
         <section className="grid grid-cols-1 gap-3 border-b border-zinc-200 pb-4 md:grid-cols-[1fr_auto] md:items-end">
           <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Orders</h1>
           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-            Active Tickets: {orders.length}
+            Active Tickets: {isLoading ? "..." : orders.length}
           </p>
         </section>
 
         <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {orders.map((order) => (
-            <Receipt
-              key={order.id}
-              id={order.id}
-              item={order.item}
-              status={order.status}
-              ingredients={order.ingredients}
-              onEdit={(id) => {
-                setModalMode("edit");
-                setSelectedOrderId(id);
-                setIsAddBurgerModalOpen(true);
-              }}
-            />
-          ))}
+          {isLoading
+            ? Array.from({ length: 6 }, (_, index) => <OrderReceiptSkeleton key={index} />)
+            : orders.map((order) => (
+                <Receipt
+                  key={order.id}
+                  id={order.id}
+                  item={order.item}
+                  ingredients={order.ingredients}
+                  onEdit={(id) => {
+                    setModalMode("edit");
+                    setSelectedOrderId(id);
+                    setIsAddBurgerModalOpen(true);
+                  }}
+                />
+              ))}
         </section>
       </div>
 

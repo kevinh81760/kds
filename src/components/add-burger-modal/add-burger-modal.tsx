@@ -13,9 +13,9 @@ type AddBurgerModalProps = {
   onClose: () => void;
   mode?: "create" | "edit";
   initialValues?: BurgerFormValues;
-  onCreate?: (values: BurgerFormValues) => void;
-  onUpdate?: (values: BurgerFormValues) => void;
-  onDelete?: () => void;
+  onCreate?: (values: BurgerFormValues) => void | Promise<void>;
+  onUpdate?: (values: BurgerFormValues) => void | Promise<void>;
+  onDelete?: () => void | Promise<void>;
 };
 
 const burgerTypes = [
@@ -86,19 +86,26 @@ export function AddBurgerModal({
     ingredients: selectedIngredients,
   };
 
-  const handlePrimaryAction = () => {
-    if (mode === "edit") {
-      onUpdate?.(currentValues);
-    } else {
-      onCreate?.(currentValues);
+  const handlePrimaryAction = async () => {
+    try {
+      if (mode === "edit") {
+        await onUpdate?.(currentValues);
+      } else {
+        await onCreate?.(currentValues);
+      }
+      onClose();
+    } catch (error) {
+      console.error("Save burger failed", error);
     }
-
-    onClose();
   };
 
-  const handleDelete = () => {
-    onDelete?.();
-    onClose();
+  const handleDelete = async () => {
+    try {
+      await onDelete?.();
+      onClose();
+    } catch (error) {
+      console.error("Delete burger failed", error);
+    }
   };
 
   return (
