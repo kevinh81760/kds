@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AddBurgerModal, Navbar, Receipt, Skeleton } from "@/components";
+import { parseResponseJson } from "@/lib/parse-response-json";
 import { getBrowserSupabaseClient } from "@/lib/supabase/client";
 import type {
   ActiveOrdersResponse,
@@ -61,13 +62,7 @@ export default function OrdersPage() {
       method: "POST",
     });
 
-    const rawText = await response.text();
-    let data: ActiveOrdersResponse | null = null;
-    try {
-      data = JSON.parse(rawText) as ActiveOrdersResponse;
-    } catch {
-      data = null;
-    }
+    const data = await parseResponseJson<ActiveOrdersResponse>(response);
 
     if (!data) {
       throw new Error(
@@ -86,6 +81,15 @@ export default function OrdersPage() {
     setIsAddBurgerModalOpen(false);
     setSelectedOrderId(null);
   };
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
 
   useEffect(() => {
     const loadActiveOrders = async () => {
@@ -258,38 +262,45 @@ export default function OrdersPage() {
   };
 
   return (
-    <main className="min-h-screen bg-white px-6 py-8 text-zinc-900 lg:px-10">
-      <div className="mx-auto flex w-full max-w-[96rem] flex-col gap-8">
-        <Navbar
-          onBuildBurgerClick={() => {
-            setModalMode("create");
-            setSelectedOrderId(null);
-            setIsAddBurgerModalOpen(true);
-          }}
-        />
-        <section className="grid grid-cols-1 gap-3 border-b border-zinc-200 pb-4 md:grid-cols-[1fr_auto] md:items-end">
+    <main className="h-screen overflow-hidden bg-white px-6 pt-8 pb-0 text-zinc-900 lg:px-10">
+      <div className="mx-auto flex h-full w-full min-h-0 max-w-384 flex-col">
+        <div className="mb-4">
+          <Navbar
+            onBuildBurgerClick={() => {
+              setModalMode("create");
+              setSelectedOrderId(null);
+              setIsAddBurgerModalOpen(true);
+            }}
+          />
+        </div>
+        <section className="mt-4 grid grid-cols-1 gap-3 border-b border-zinc-200 pb-4 md:grid-cols-[1fr_auto] md:items-end">
           <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Orders</h1>
           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
             Active Tickets: {isLoading ? "..." : orders.length}
           </p>
         </section>
-        <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {isLoading
-            ? Array.from({ length: 6 }, (_, index) => <OrderReceiptSkeleton key={index} />)
-            : orders.map((order) => (
-                <Receipt
-                  key={order.id}
-                  orderId={order.id}
-                  trayNumber={order.trayNumber}
-                  item={order.item}
-                  ingredients={order.ingredients}
-                  onEdit={(orderId) => {
-                    setModalMode("edit");
-                    setSelectedOrderId(orderId);
-                    setIsAddBurgerModalOpen(true);
-                  }}
-                />
-              ))}
+        <section
+          className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          style={{ msOverflowStyle: "none" }}
+        >
+          <div className="grid grid-cols-1 gap-5 pt-8 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            {isLoading
+              ? Array.from({ length: 6 }, (_, index) => <OrderReceiptSkeleton key={index} />)
+              : orders.map((order) => (
+                  <Receipt
+                    key={order.id}
+                    orderId={order.id}
+                    trayNumber={order.trayNumber}
+                    item={order.item}
+                    ingredients={order.ingredients}
+                    onEdit={(orderId) => {
+                      setModalMode("edit");
+                      setSelectedOrderId(orderId);
+                      setIsAddBurgerModalOpen(true);
+                    }}
+                  />
+                ))}
+          </div>
         </section>
       </div>
 

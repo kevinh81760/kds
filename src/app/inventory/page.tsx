@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BurgersSoldChart, InventoryLevelsChart, Navbar } from "@/components";
 
 const timeframeOptions = ["Today", "Week", "Month", "Year"] as const;
@@ -9,8 +9,17 @@ type Timeframe = (typeof timeframeOptions)[number];
 export default function InventoryPage() {
   const [selectedTimeframe, setSelectedTimeframe] = useState<Timeframe>("Today");
 
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
   return (
-    <main className="min-h-screen bg-white px-6 py-8 text-zinc-900 lg:px-10">
+    <main className="h-screen overflow-hidden bg-white px-6 py-8 text-zinc-900 lg:px-10">
       <div className="mx-auto flex w-full max-w-384 flex-col gap-8">
         <Navbar />
         <section className="grid grid-cols-1 gap-3 border-b border-dotted border-zinc-300 pb-4 md:grid-cols-[1fr_auto] md:items-end">

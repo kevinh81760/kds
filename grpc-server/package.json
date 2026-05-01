@@ -16,6 +16,7 @@
   },
   "scripts": {
     "dev": "bun server.ts",
-    "test:get-order": "bun client-test.ts"
+    "test:get-order": "bun client-test.ts",
+    "test:complete-order": "bun client-test-complete.ts"
   }
 }

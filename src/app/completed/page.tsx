@@ -2,8 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { Navbar, Skeleton } from "@/components";
+import { parseResponseJson } from "@/lib/parse-response-json";
 import { getBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { CompletedOrder, CompletedOrdersResponse } from "@/types/order";
+
+/** Same column template for header, skeleton rows, and data rows (md+). */
+const COMPLETED_TABLE_HEADER_GRID_CLASS =
+  "hidden grid-cols-[1.1fr_1.4fr_2.3fr_1fr_1fr_0.7fr] items-center gap-4 border-b border-dotted border-zinc-300 pb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500 md:grid";
+
+const COMPLETED_TABLE_SKELETON_ROW_CLASS =
+  "grid grid-cols-1 gap-2 py-3 md:grid-cols-[1.1fr_1.4fr_2.3fr_1fr_1fr_0.7fr] md:items-center md:gap-4";
+
+const COMPLETED_TABLE_DATA_ROW_CLASS =
+  "grid grid-cols-1 gap-1 py-3 text-sm text-zinc-900 md:grid-cols-[1.1fr_1.4fr_2.3fr_1fr_1fr_0.7fr] md:items-center md:gap-4";
 
 const formatIngredients = (ingredients: readonly string[]) => {
   if (ingredients.length === 0) {
@@ -30,8 +41,28 @@ const formatCompletedDate = (isoDate: string) =>
     year: "2-digit",
   });
 
+async function loadCompletedOrdersFromApi(): Promise<CompletedOrder[]> {
+  const response = await fetch("/api/orders/completed", {
+    method: "POST",
+  });
+
+  const data = await parseResponseJson<CompletedOrdersResponse>(response);
+
+  if (!data) {
+    throw new Error(
+      `Failed to load completed orders. Non-JSON response received (status=${response.status}).`,
+    );
+  }
+
+  if (!response.ok || !data.success) {
+    throw new Error(data.error ?? "Failed to load completed orders.");
+  }
+
+  return data.orders ?? [];
+}
+
 const CompletedRowSkeleton = () => (
-  <li className="grid grid-cols-1 gap-2 py-3 md:grid-cols-[1.1fr_1.4fr_2.3fr_1fr_1fr_0.7fr] md:items-center md:gap-4">
+  <li className={COMPLETED_TABLE_SKELETON_ROW_CLASS}>
     <Skeleton className="h-3 w-16" tone="strong" />
     <Skeleton className="h-4 w-36" />
     <Skeleton className="h-4 w-52" tone="soft" />
@@ -47,35 +78,23 @@ export default function CompletedPage() {
   const [, setErrorBanner] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchCompletedOrders = async () => {
-      const response = await fetch("/api/orders/completed", {
-        method: "POST",
-      });
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
 
-      const rawText = await response.text();
-      let data: CompletedOrdersResponse | null = null;
-      try {
-        data = JSON.parse(rawText) as CompletedOrdersResponse;
-      } catch {
-        data = null;
-      }
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
 
-      if (!data) {
-        throw new Error(
-          `Failed to load completed orders. Non-JSON response received (status=${response.status}).`,
-        );
-      }
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.error ?? "Failed to load completed orders.");
-      }
-
-      setCompletedOrders(data.orders ?? []);
+  useEffect(() => {
+    const refreshOrders = async () => {
+      const orders = await loadCompletedOrdersFromApi();
+      setCompletedOrders(orders);
     };
 
-    const loadCompletedOrders = async () => {
+    const loadInitial = async () => {
       try {
-        await fetchCompletedOrders();
+        await refreshOrders();
         setErrorBanner(null);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to load completed orders.";
@@ -86,7 +105,7 @@ export default function CompletedPage() {
       }
     };
 
-    void loadCompletedOrders();
+    void loadInitial();
 
     const { client, error } = getBrowserSupabaseClient();
     if (!client) {
@@ -100,7 +119,7 @@ export default function CompletedPage() {
         "postgres_changes",
         { event: "*", schema: "public", table: "orders" },
         () => {
-          void fetchCompletedOrders().then(
+          void refreshOrders().then(
             () => setErrorBanner(null),
             (fetchError) => {
               const message =
@@ -129,8 +148,8 @@ export default function CompletedPage() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-white px-6 py-8 text-zinc-900 lg:px-10">
-      <div className="mx-auto flex w-full max-w-[96rem] flex-col gap-8">
+    <main className="h-screen overflow-hidden bg-white px-6 py-8 text-zinc-900 lg:px-10">
+      <div className="mx-auto flex w-full max-w-384 flex-col gap-8">
         <Navbar />
         <section className="grid grid-cols-1 gap-3 border-b border-dotted border-zinc-300 pb-4 md:grid-cols-[1fr_auto] md:items-end">
           <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Completed</h1>
@@ -139,7 +158,7 @@ export default function CompletedPage() {
           </p>
         </section>
         <section className="rounded-xl border border-zinc-200 bg-white px-4 py-3 shadow-sm md:px-6 md:py-4">
-          <div className="hidden grid-cols-[1.1fr_1.4fr_2.3fr_1fr_1fr_0.7fr] items-center gap-4 border-b border-dotted border-zinc-300 pb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500 md:grid">
+          <div className={COMPLETED_TABLE_HEADER_GRID_CLASS}>
             {isLoading ? (
               <>
                 <Skeleton className="h-3 w-14" tone="soft" />
@@ -151,7 +170,7 @@ export default function CompletedPage() {
               </>
             ) : (
               <>
-                <p>Tray</p>
+                <p>TRAY #</p>
                 <p>Item</p>
                 <p>Ingredients</p>
                 <p>Status</p>
@@ -165,14 +184,11 @@ export default function CompletedPage() {
             {isLoading
               ? Array.from({ length: 6 }, (_, index) => <CompletedRowSkeleton key={index} />)
               : completedOrders.map((order) => (
-                  <li
-                    key={order.id}
-                    className="grid grid-cols-1 gap-1 py-3 text-sm text-zinc-900 md:grid-cols-[1.1fr_1.4fr_2.3fr_1fr_1fr_0.7fr] md:items-center md:gap-4"
-                  >
+                  <li key={order.id} className={COMPLETED_TABLE_DATA_ROW_CLASS}>
                     <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500 md:hidden">
-                      Tray #{order.trayNumber}
+                      {order.trayNumber}
                     </p>
-                    <p className="font-semibold md:font-medium">Tray #{order.trayNumber}</p>
+                    <p className="font-semibold md:font-medium">{order.trayNumber}</p>
                     <p>{order.item}</p>
                     <p className="text-zinc-700">{formatIngredients(order.ingredients)}</p>
                     <p>
