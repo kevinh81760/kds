@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { DbCommand, DbOrderCommand } from "@/types/command";
-import { type DbOrder, mapStatusToUi } from "@/types/order";
+import type { DbOrder } from "@/types/order";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -23,8 +23,8 @@ export async function POST() {
     const { data: orders, error: ordersError } = await supabase
       .from("orders")
       .select("id, status, burger_name, tray_number")
-      .in("status", [1, 2])
-      .order("created_at", { ascending: false });
+      .in("status", ["pending", "running"])
+      .order("created_at", { ascending: true });
 
     if (ordersError) {
       return NextResponse.json({ error: ordersError.message }, { status: 500 });
@@ -50,7 +50,7 @@ export async function POST() {
     const commandCodes = [...new Set(typedCommands.map((command) => command.command_code))];
 
     const { data: commandRows, error: commandRowsError } = await supabase
-      .from("command")
+      .from("commands")
       .select("ingredient_name, command_code")
       .in("command_code", commandCodes);
 
@@ -84,7 +84,7 @@ export async function POST() {
             ? Number(order.tray_number)
             : 0,
         item: order.burger_name?.trim() || "Custom Burger",
-        status: mapStatusToUi(order.status),
+        status: order.status,
         ingredients,
       };
     });

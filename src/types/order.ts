@@ -1,4 +1,6 @@
-export type OrderStatus = "In Progress" | "Ready" | "Queued";
+import type { CommandStatus } from "@/types/command";
+
+export type OrderStatus = "pending" | "running" | "done" | "failed";
 
 export type Order = {
   id: string;
@@ -13,7 +15,18 @@ export type CompletedOrder = {
   trayNumber: number;
   item: string;
   ingredients: string[];
+  commands: CompletedOrderCommand[];
   completedAt: string;
+  status: "done" | "failed";
+};
+
+export type CompletedOrderCommand = {
+  id: number;
+  code: string;
+  level: number | null;
+  ingredient: string | null;
+  status: CommandStatus;
+  isDisabled: boolean;
 };
 
 export type ActiveOrdersResponse = {
@@ -84,26 +97,16 @@ export type CreateOrderResponse = {
 
 export type DbOrder = {
   id: number;
-  status: number;
+  status: OrderStatus;
   burger_name: string | null;
   tray_number: number | null;
 };
 
 export type DbCompletedOrder = {
   id: number;
+  status: "done" | "failed";
   burger_name: string | null;
   tray_number: number | null;
   updated_at: string;
 };
 
-export function mapStatusToUi(status: number): OrderStatus {
-  if (status === 2) {
-    return "In Progress";
-  }
-
-  if (status === 3) {
-    return "Ready";
-  }
-
-  return "Queued";
-}

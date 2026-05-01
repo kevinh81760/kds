@@ -95,6 +95,20 @@ export async function getOrderForPi(trayNumber: number) {
     return null;
   }
 
+  // Pi has picked up the order; flip it to running before handing back the payload.
+  const { error: statusError } = await supabase
+    .from("orders")
+    .update({ status: "running", updated_at: new Date().toISOString() })
+    .eq("id", order.id);
+
+  if (statusError) {
+    console.error(
+      "[grpc-server] failed to mark order running:",
+      statusError.code,
+      statusError.message,
+    );
+  }
+
   const commands = await getCommandsByOrderId(order.id);
 
   return {

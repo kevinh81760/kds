@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Navbar, Skeleton } from "@/components";
+import { getBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { CompletedOrder, CompletedOrdersResponse } from "@/types/order";
 
 const formatIngredients = (ingredients: readonly string[]) => {
@@ -30,10 +31,11 @@ const formatCompletedDate = (isoDate: string) =>
   });
 
 const CompletedRowSkeleton = () => (
-  <li className="grid grid-cols-1 gap-2 py-3 md:grid-cols-[1.1fr_1.5fr_2.5fr_1fr_0.7fr] md:items-center md:gap-4">
+  <li className="grid grid-cols-1 gap-2 py-3 md:grid-cols-[1.1fr_1.4fr_2.3fr_1fr_1fr_0.7fr] md:items-center md:gap-4">
     <Skeleton className="h-3 w-16" tone="strong" />
     <Skeleton className="h-4 w-36" />
     <Skeleton className="h-4 w-52" tone="soft" />
+    <Skeleton className="h-4 w-18" />
     <Skeleton className="h-4 w-20" />
     <Skeleton className="h-4 w-16" tone="soft" />
   </li>
@@ -42,6 +44,7 @@ const CompletedRowSkeleton = () => (
 export default function CompletedPage() {
   const [completedOrders, setCompletedOrders] = useState<CompletedOrder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchCompletedOrders = async () => {
@@ -73,7 +76,10 @@ export default function CompletedPage() {
     const loadCompletedOrders = async () => {
       try {
         await fetchCompletedOrders();
+        setErrorBanner(null);
       } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to load completed orders.";
+        setErrorBanner(message);
         console.error("Load completed orders failed", error);
       } finally {
         setIsLoading(false);
@@ -81,6 +87,45 @@ export default function CompletedPage() {
     };
 
     void loadCompletedOrders();
+
+    const { client, error } = getBrowserSupabaseClient();
+    if (!client) {
+      setErrorBanner(error);
+      return;
+    }
+
+    const channel = client
+      .channel("completed-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "orders" },
+        () => {
+          void fetchCompletedOrders().then(
+            () => setErrorBanner(null),
+            (fetchError) => {
+              const message =
+                fetchError instanceof Error
+                  ? fetchError.message
+                  : "Failed to refresh completed orders from realtime updates.";
+              setErrorBanner(message);
+            },
+          );
+        },
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          setErrorBanner(null);
+          return;
+        }
+
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          setErrorBanner("Realtime connection dropped. Attempting to reconnect...");
+        }
+      });
+
+    return () => {
+      void client.removeChannel(channel);
+    };
   }, []);
 
   return (
@@ -93,14 +138,20 @@ export default function CompletedPage() {
             Total: {isLoading ? "..." : completedOrders.length}
           </p>
         </section>
+        {errorBanner ? (
+          <section className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {errorBanner}
+          </section>
+        ) : null}
 
         <section className="rounded-xl border border-zinc-200 bg-white px-4 py-3 shadow-sm md:px-6 md:py-4">
-          <div className="hidden grid-cols-[1.1fr_1.5fr_2.5fr_1fr_0.7fr] items-center gap-4 border-b border-dotted border-zinc-300 pb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500 md:grid">
+          <div className="hidden grid-cols-[1.1fr_1.4fr_2.3fr_1fr_1fr_0.7fr] items-center gap-4 border-b border-dotted border-zinc-300 pb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500 md:grid">
             {isLoading ? (
               <>
                 <Skeleton className="h-3 w-14" tone="soft" />
                 <Skeleton className="h-3 w-12" tone="soft" />
                 <Skeleton className="h-3 w-24" tone="soft" />
+                <Skeleton className="h-3 w-14" tone="soft" />
                 <Skeleton className="h-3 w-16" tone="soft" />
                 <Skeleton className="h-3 w-10" tone="soft" />
               </>
@@ -109,6 +160,7 @@ export default function CompletedPage() {
                 <p>Tray</p>
                 <p>Item</p>
                 <p>Ingredients</p>
+                <p>Status</p>
                 <p>Completed</p>
                 <p>Date</p>
               </>
@@ -121,7 +173,7 @@ export default function CompletedPage() {
               : completedOrders.map((order) => (
                   <li
                     key={order.id}
-                    className="grid grid-cols-1 gap-1 py-3 text-sm text-zinc-900 md:grid-cols-[1.1fr_1.5fr_2.5fr_1fr_0.7fr] md:items-center md:gap-4"
+                    className="grid grid-cols-1 gap-1 py-3 text-sm text-zinc-900 md:grid-cols-[1.1fr_1.4fr_2.3fr_1fr_1fr_0.7fr] md:items-center md:gap-4"
                   >
                     <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500 md:hidden">
                       Tray #{order.trayNumber}
@@ -129,6 +181,17 @@ export default function CompletedPage() {
                     <p className="font-semibold md:font-medium">Tray #{order.trayNumber}</p>
                     <p>{order.item}</p>
                     <p className="text-zinc-700">{formatIngredients(order.ingredients)}</p>
+                    <p>
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] ${
+                          order.status === "failed"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-emerald-100 text-emerald-700"
+                        }`}
+                      >
+                        {order.status}
+                      </span>
+                    </p>
                     <p>{formatCompletedTime(order.completedAt)}</p>
                     <p>{formatCompletedDate(order.completedAt)}</p>
                   </li>

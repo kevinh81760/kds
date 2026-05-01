@@ -22,8 +22,8 @@ export async function POST() {
 
     const { data: orders, error: ordersError } = await supabase
       .from("orders")
-      .select("id, burger_name, tray_number, updated_at")
-      .eq("status", 3)
+      .select("id, status, burger_name, tray_number, updated_at")
+      .in("status", ["done", "failed"])
       .order("updated_at", { ascending: false });
 
     if (ordersError) {
@@ -38,7 +38,7 @@ export async function POST() {
     const internalOrderIds = typedOrders.map((order) => order.id);
     const { data: orderCommands, error: orderCommandsError } = await supabase
       .from("order_command")
-      .select("id, order_id, command_code, command_level, is_disabled")
+      .select("id, order_id, command_code, command_level, is_disabled, status")
       .in("order_id", internalOrderIds)
       .order("id", { ascending: true });
 
@@ -50,7 +50,7 @@ export async function POST() {
     const commandCodes = [...new Set(typedCommands.map((command) => command.command_code))];
 
     const { data: commandRows, error: commandRowsError } = await supabase
-      .from("command")
+      .from("commands")
       .select("ingredient_name, command_code")
       .in("command_code", commandCodes);
 
@@ -85,7 +85,16 @@ export async function POST() {
             : 0,
         item: order.burger_name?.trim() || "Custom Burger",
         ingredients,
+        commands: commands.map((command) => ({
+          id: command.id,
+          code: command.command_code,
+          level: command.command_level,
+          ingredient: ingredientByCommandCode.get(command.command_code) ?? null,
+          status: command.status,
+          isDisabled: command.is_disabled,
+        })),
         completedAt: order.updated_at,
+        status: order.status,
       };
     });
 

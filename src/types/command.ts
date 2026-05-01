@@ -1,9 +1,12 @@
+export type CommandStatus = "pending" | "running" | "completed" | "failed";
+
 export type DbOrderCommand = {
   id: number;
   order_id: number;
   command_code: string;
   command_level: number | null;
   is_disabled: boolean;
+  status: CommandStatus;
 };
 
 export type DbCommand = {

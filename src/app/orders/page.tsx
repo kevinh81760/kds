@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AddBurgerModal, Navbar, Receipt, Skeleton } from "@/components";
+import { getBrowserSupabaseClient } from "@/lib/supabase/client";
 import type {
   ActiveOrdersResponse,
   BurgerFormValues,
@@ -48,6 +49,7 @@ const OrderReceiptSkeleton = () => (
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>(initialOrders);
   const [isLoading, setIsLoading] = useState(true);
+  const [, setErrorBanner] = useState<string | null>(null);
   const [isAddBurgerModalOpen, setIsAddBurgerModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
@@ -89,7 +91,10 @@ export default function OrdersPage() {
     const loadActiveOrders = async () => {
       try {
         await fetchActiveOrders();
+        setErrorBanner(null);
       } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to load active orders.";
+        setErrorBanner(message);
         console.error("Load active orders failed", error);
       } finally {
         setIsLoading(false);
@@ -97,6 +102,45 @@ export default function OrdersPage() {
     };
 
     void loadActiveOrders();
+
+    const { client, error } = getBrowserSupabaseClient();
+    if (!client) {
+      setErrorBanner(error);
+      return;
+    }
+
+    const channel = client
+      .channel("orders-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "orders" },
+        () => {
+          void fetchActiveOrders().then(
+            () => setErrorBanner(null),
+            (fetchError) => {
+              const message =
+                fetchError instanceof Error
+                  ? fetchError.message
+                  : "Failed to refresh active orders from realtime updates.";
+              setErrorBanner(message);
+            },
+          );
+        },
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          setErrorBanner(null);
+          return;
+        }
+
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          setErrorBanner("Realtime connection dropped. Attempting to reconnect...");
+        }
+      });
+
+    return () => {
+      void client.removeChannel(channel);
+    };
   }, []);
 
   const handleCreateBurger = async (
@@ -154,7 +198,7 @@ export default function OrdersPage() {
         id: orderId,
         trayNumber,
         item: payload.burgerType,
-        status: "Queued",
+        status: "pending",
         ingredients: payload.ingredients,
       },
     ]);
@@ -229,7 +273,6 @@ export default function OrdersPage() {
             Active Tickets: {isLoading ? "..." : orders.length}
           </p>
         </section>
-
         <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {isLoading
             ? Array.from({ length: 6 }, (_, index) => <OrderReceiptSkeleton key={index} />)
