@@ -17,7 +17,6 @@ type BurgerFormValues = {
 };
 
 type CreateBurgerPayload = {
-  orderId: string;
   burgerType: string;
   ingredients: string[];
   trayNumber: number;
@@ -143,7 +142,7 @@ export default function OrdersPage() {
     void loadActiveOrders();
   }, []);
 
-  const handleCreateBurger = async (payload: CreateBurgerPayload) => {
+  const handleCreateBurger = async (payload: CreateBurgerPayload): Promise<string> => {
     const response = await fetch("/api/orders/create", {
       method: "POST",
       headers: {
@@ -155,12 +154,20 @@ export default function OrdersPage() {
     const data = (await response.json()) as {
       error?: string;
       success?: boolean;
+      orderId?: string | number;
       code?: string;
       details?: string;
       hint?: string;
       sentParams?: unknown;
     };
-    if (!response.ok || !data.success) {
+    const resolvedOrderId =
+      typeof data.orderId === "string" && data.orderId.trim()
+        ? data.orderId.trim()
+        : typeof data.orderId === "number" && Number.isFinite(data.orderId)
+          ? String(Math.trunc(data.orderId))
+          : null;
+
+    if (!response.ok || !data.success || resolvedOrderId === null) {
       const debugMessage = [
         data.error ?? "Failed to create burger order.",
         data.code ? `code=${data.code}` : null,
@@ -172,21 +179,22 @@ export default function OrdersPage() {
 
       throw new Error(debugMessage);
     }
+
+    return resolvedOrderId;
   };
 
   const handleCreate = async (values: BurgerFormValues) => {
     const payload: CreateBurgerPayload = {
-      orderId: getSafeOrderId(orders, values.id),
       burgerType: values.item,
       ingredients: values.ingredients,
       trayNumber: getNextTrayNumber(orders),
     };
 
-    await handleCreateBurger(payload);
+    const createdId = await handleCreateBurger(payload);
     setOrders((currentOrders) => [
       ...currentOrders,
       {
-        id: payload.orderId,
+        id: createdId,
         item: payload.burgerType,
         status: "Queued",
         ingredients: payload.ingredients,

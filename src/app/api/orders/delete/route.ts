@@ -32,8 +32,8 @@ export async function DELETE(req: Request) {
 
     const { data: existingOrder, error: findError } = await supabase
       .from("orders")
-      .select("id, sync_id")
-      .eq("sync_id", parsedOrderId)
+      .select("id")
+      .eq("id", parsedOrderId)
       .maybeSingle();
 
     if (findError) {

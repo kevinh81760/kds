@@ -3,7 +3,6 @@ import { createClient } from "@supabase/supabase-js";
 
 type DbOrder = {
   id: number;
-  sync_id: number;
   burger_name: string | null;
   updated_at: string;
 };
@@ -12,9 +11,11 @@ type DbOrderCommand = {
   id: number;
   order_id: number;
   command_code: string;
+  command_level: number | null;
+  is_disabled: boolean;
 };
 
-type DbIngredientMap = {
+type DbCommand = {
   ingredient_name: string;
   command_code: string;
 };
@@ -38,7 +39,7 @@ export async function POST() {
 
     const { data: orders, error: ordersError } = await supabase
       .from("orders")
-      .select("id, sync_id, burger_name, updated_at")
+      .select("id, burger_name, updated_at")
       .eq("status", 3)
       .order("updated_at", { ascending: false });
 
@@ -53,8 +54,8 @@ export async function POST() {
 
     const internalOrderIds = typedOrders.map((order) => order.id);
     const { data: orderCommands, error: orderCommandsError } = await supabase
-      .from("order_commands")
-      .select("id, order_id, command_code")
+      .from("order_command")
+      .select("id, order_id, command_code, command_level, is_disabled")
       .in("order_id", internalOrderIds)
       .order("id", { ascending: true });
 
@@ -65,18 +66,18 @@ export async function POST() {
     const typedCommands = (orderCommands ?? []) as DbOrderCommand[];
     const commandCodes = [...new Set(typedCommands.map((command) => command.command_code))];
 
-    const { data: ingredientMaps, error: ingredientMapsError } = await supabase
-      .from("ingredient_command_map")
+    const { data: commandRows, error: commandRowsError } = await supabase
+      .from("command")
       .select("ingredient_name, command_code")
       .in("command_code", commandCodes);
 
-    if (ingredientMapsError) {
-      return NextResponse.json({ error: ingredientMapsError.message }, { status: 500 });
+    if (commandRowsError) {
+      return NextResponse.json({ error: commandRowsError.message }, { status: 500 });
     }
 
-    const typedIngredientMaps = (ingredientMaps ?? []) as DbIngredientMap[];
+    const typedCommandsCatalog = (commandRows ?? []) as DbCommand[];
     const ingredientByCommandCode = new Map(
-      typedIngredientMaps.map((item) => [item.command_code, item.ingredient_name]),
+      typedCommandsCatalog.map((item) => [item.command_code, item.ingredient_name]),
     );
 
     const commandsByOrderId = new Map<number, DbOrderCommand[]>();
@@ -89,11 +90,12 @@ export async function POST() {
     const formattedOrders = typedOrders.map((order) => {
       const commands = commandsByOrderId.get(order.id) ?? [];
       const ingredients = commands
+        .filter((command) => !command.is_disabled)
         .map((command) => ingredientByCommandCode.get(command.command_code))
         .filter((ingredient): ingredient is string => Boolean(ingredient));
 
       return {
-        id: String(order.sync_id),
+        id: String(order.id),
         item: order.burger_name?.trim() || "Custom Burger",
         ingredients,
         completedAt: order.updated_at,
