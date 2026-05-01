@@ -1,17 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-
-type BurgerFormValues = {
-  id: string;
-  item: string;
-  ingredients: string[];
-};
+import type { BurgerFormValues } from "@/types/order";
 
 type AddBurgerModalProps = {
   isOpen: boolean;
   onClose: () => void;
   mode?: "create" | "edit";
+  suggestedTrayNumber?: number;
   initialValues?: BurgerFormValues;
   onCreate?: (values: BurgerFormValues) => void | Promise<void>;
   onUpdate?: (values: BurgerFormValues) => void | Promise<void>;
@@ -40,6 +36,7 @@ export function AddBurgerModal({
   isOpen,
   onClose,
   mode = "create",
+  suggestedTrayNumber,
   initialValues,
   onCreate,
   onUpdate,
@@ -47,7 +44,7 @@ export function AddBurgerModal({
 }: AddBurgerModalProps) {
   const [burgerType, setBurgerType] = useState<string>(burgerTypes[0]);
   const [selectedIngredients, setSelectedIngredients] = useState<string[]>([...ingredients]);
-  const [qrNumber, setQrNumber] = useState("");
+  const [trayNumberInput, setTrayNumberInput] = useState("");
 
   useEffect(() => {
     if (!isOpen) {
@@ -59,14 +56,18 @@ export function AddBurgerModal({
       setSelectedIngredients(
         initialValues.ingredients.filter((ingredient) => availableIngredients.has(ingredient)),
       );
-      setQrNumber(initialValues.id);
+      setTrayNumberInput(String(initialValues.trayNumber));
       return;
     }
 
     setBurgerType(burgerTypes[0]);
     setSelectedIngredients([...ingredients]);
-    setQrNumber("");
-  }, [initialValues, isOpen]);
+    const fallbackTray =
+      suggestedTrayNumber != null && Number.isFinite(suggestedTrayNumber)
+        ? suggestedTrayNumber
+        : 1;
+    setTrayNumberInput(String(fallbackTray));
+  }, [initialValues, isOpen, suggestedTrayNumber]);
 
   if (!isOpen) {
     return null;
@@ -80,14 +81,24 @@ export function AddBurgerModal({
     );
   };
 
-  const currentValues: BurgerFormValues = {
-    id: qrNumber.trim(),
-    item: burgerType,
-    ingredients: selectedIngredients,
-  };
+  const parsedTrayNumber = Number.parseInt(trayNumberInput.trim(), 10);
 
   const handlePrimaryAction = async () => {
     try {
+      if (!Number.isFinite(parsedTrayNumber)) {
+        console.error("Save burger failed", new Error("Enter a valid tray number."));
+        return;
+      }
+
+      const orderId = initialValues?.id ?? "";
+
+      const currentValues: BurgerFormValues = {
+        id: orderId,
+        trayNumber: parsedTrayNumber,
+        item: burgerType,
+        ingredients: selectedIngredients,
+      };
+
       if (mode === "edit") {
         await onUpdate?.(currentValues);
       } else {
@@ -165,15 +176,17 @@ export function AddBurgerModal({
           </section>
 
           <section>
-            <label htmlFor="qr-number" className="mb-2 block text-sm font-semibold text-zinc-800">
-              QR #
+            <label htmlFor="tray-number" className="mb-2 block text-sm font-semibold text-zinc-800">
+              Tray #
             </label>
             <input
-              id="qr-number"
-              type="text"
-              value={qrNumber}
-              onChange={(event) => setQrNumber(event.target.value)}
-              placeholder="Enter QR #"
+              id="tray-number"
+              type="number"
+              inputMode="numeric"
+              min={1}
+              value={trayNumberInput}
+              onChange={(event) => setTrayNumberInput(event.target.value)}
+              placeholder="Tray number"
               className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 outline-none transition-colors placeholder:text-zinc-400 focus:border-zinc-500"
             />
           </section>

@@ -1,11 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-
-type CreateOrderRequestBody = {
-  burgerType?: string;
-  trayNumber?: number;
-  ingredients?: string[];
-};
+import type { CreateOrderRequestBody, CreateOrderSuccessBody } from "@/types/order";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -81,13 +76,15 @@ export async function POST(req: Request) {
       );
     }
 
-    return NextResponse.json({
+    const successBody: CreateOrderSuccessBody = {
       success: true,
       orderId: String(numericOrderId),
       burgerType: normalizedBurgerType,
       trayNumber: parsedTrayNumber,
       ingredients,
-    });
+    };
+
+    return NextResponse.json(successBody);
   } catch (error) {
     return NextResponse.json(
       {

@@ -1,24 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-
-type DbOrder = {
-  id: number;
-  burger_name: string | null;
-  updated_at: string;
-};
-
-type DbOrderCommand = {
-  id: number;
-  order_id: number;
-  command_code: string;
-  command_level: number | null;
-  is_disabled: boolean;
-};
-
-type DbCommand = {
-  ingredient_name: string;
-  command_code: string;
-};
+import type { DbCommand, DbOrderCommand } from "@/types/command";
+import type { DbCompletedOrder } from "@/types/order";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -39,7 +22,7 @@ export async function POST() {
 
     const { data: orders, error: ordersError } = await supabase
       .from("orders")
-      .select("id, burger_name, updated_at")
+      .select("id, burger_name, tray_number, updated_at")
       .eq("status", 3)
       .order("updated_at", { ascending: false });
 
@@ -47,7 +30,7 @@ export async function POST() {
       return NextResponse.json({ error: ordersError.message }, { status: 500 });
     }
 
-    const typedOrders = (orders ?? []) as DbOrder[];
+    const typedOrders = (orders ?? []) as DbCompletedOrder[];
     if (typedOrders.length === 0) {
       return NextResponse.json({ success: true, orders: [] });
     }
@@ -96,6 +79,10 @@ export async function POST() {
 
       return {
         id: String(order.id),
+        trayNumber:
+          order.tray_number != null && Number.isFinite(Number(order.tray_number))
+            ? Number(order.tray_number)
+            : 0,
         item: order.burger_name?.trim() || "Custom Burger",
         ingredients,
         completedAt: order.updated_at,

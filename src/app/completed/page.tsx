@@ -2,19 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Navbar, Skeleton } from "@/components";
-
-type CompletedOrder = {
-  id: string;
-  item: string;
-  ingredients: string[];
-  completedAt: string;
-};
-
-type CompletedOrdersResponse = {
-  success?: boolean;
-  error?: string;
-  orders?: CompletedOrder[];
-};
+import type { CompletedOrder, CompletedOrdersResponse } from "@/types/order";
 
 const formatIngredients = (ingredients: readonly string[]) => {
   if (ingredients.length === 0) {
@@ -118,7 +106,7 @@ export default function CompletedPage() {
               </>
             ) : (
               <>
-                <p>Order</p>
+                <p>Tray</p>
                 <p>Item</p>
                 <p>Ingredients</p>
                 <p>Completed</p>
@@ -136,9 +124,9 @@ export default function CompletedPage() {
                     className="grid grid-cols-1 gap-1 py-3 text-sm text-zinc-900 md:grid-cols-[1.1fr_1.5fr_2.5fr_1fr_0.7fr] md:items-center md:gap-4"
                   >
                     <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500 md:hidden">
-                      QR #{order.id}
+                      Tray #{order.trayNumber}
                     </p>
-                    <p className="font-semibold md:font-medium">QR #{order.id}</p>
+                    <p className="font-semibold md:font-medium">Tray #{order.trayNumber}</p>
                     <p>{order.item}</p>
                     <p className="text-zinc-700">{formatIngredients(order.ingredients)}</p>
                     <p>{formatCompletedTime(order.completedAt)}</p>

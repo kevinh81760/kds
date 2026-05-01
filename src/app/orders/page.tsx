@@ -2,67 +2,24 @@
 
 import { useEffect, useState } from "react";
 import { AddBurgerModal, Navbar, Receipt, Skeleton } from "@/components";
-
-type Order = {
-  id: string;
-  item: string;
-  status: "In Progress" | "Ready" | "Queued";
-  ingredients: string[];
-};
-
-type BurgerFormValues = {
-  id: string;
-  item: string;
-  ingredients: string[];
-};
-
-type CreateBurgerPayload = {
-  burgerType: string;
-  ingredients: string[];
-  trayNumber: number;
-};
-
-type ActiveOrdersResponse = {
-  success?: boolean;
-  error?: string;
-  orders?: Order[];
-};
-
-type DeleteOrderResponse = {
-  success?: boolean;
-  error?: string;
-};
+import type {
+  ActiveOrdersResponse,
+  BurgerFormValues,
+  CreateBurgerPayload,
+  CreateOrderResponse,
+  DeleteOrderResponse,
+  Order,
+} from "@/types/order";
 
 const initialOrders: Order[] = [];
 
-const normalizeQrValue = (value: string) => value.replace(/^qr\s*#?\s*/i, "").trim();
-
-const getNextAvailableOrderId = (orders: Order[]) => {
-  const numericIds = orders
-    .map((order) => Number.parseInt(order.id, 10))
-    .filter((id) => Number.isFinite(id));
-
-  const currentMax = numericIds.length > 0 ? Math.max(...numericIds) : 1000;
-  return String(currentMax + 1);
+const getNextTrayNumber = (orders: Order[]) => {
+  const trays = orders
+    .map((order) => order.trayNumber)
+    .filter((n) => Number.isFinite(n));
+  const maxTray = trays.length > 0 ? Math.max(...trays) : 0;
+  return maxTray + 1;
 };
-
-const getSafeOrderId = (orders: Order[], desiredId: string, excludedId?: string) => {
-  const normalizedId = normalizeQrValue(desiredId);
-  const takenIds = new Set(orders.filter((order) => order.id !== excludedId).map((order) => order.id));
-
-  if (normalizedId && !takenIds.has(normalizedId)) {
-    return normalizedId;
-  }
-
-  let nextId = getNextAvailableOrderId(orders);
-  while (takenIds.has(nextId)) {
-    nextId = String(Number.parseInt(nextId, 10) + 1);
-  }
-
-  return nextId;
-};
-
-const getNextTrayNumber = (orders: Order[]) => orders.length + 1;
 
 const OrderReceiptSkeleton = () => (
   <article
@@ -142,7 +99,9 @@ export default function OrdersPage() {
     void loadActiveOrders();
   }, []);
 
-  const handleCreateBurger = async (payload: CreateBurgerPayload): Promise<string> => {
+  const handleCreateBurger = async (
+    payload: CreateBurgerPayload,
+  ): Promise<{ orderId: string; trayNumber: number }> => {
     const response = await fetch("/api/orders/create", {
       method: "POST",
       headers: {
@@ -151,15 +110,7 @@ export default function OrdersPage() {
       body: JSON.stringify(payload),
     });
 
-    const data = (await response.json()) as {
-      error?: string;
-      success?: boolean;
-      orderId?: string | number;
-      code?: string;
-      details?: string;
-      hint?: string;
-      sentParams?: unknown;
-    };
+    const data = (await response.json()) as CreateOrderResponse;
     const resolvedOrderId =
       typeof data.orderId === "string" && data.orderId.trim()
         ? data.orderId.trim()
@@ -180,21 +131,28 @@ export default function OrdersPage() {
       throw new Error(debugMessage);
     }
 
-    return resolvedOrderId;
+    const resolvedTray =
+      typeof data.trayNumber === "number" && Number.isFinite(data.trayNumber)
+        ? data.trayNumber
+        : payload.trayNumber;
+
+    return { orderId: resolvedOrderId, trayNumber: resolvedTray };
   };
 
   const handleCreate = async (values: BurgerFormValues) => {
     const payload: CreateBurgerPayload = {
       burgerType: values.item,
       ingredients: values.ingredients,
-      trayNumber: getNextTrayNumber(orders),
+      trayNumber: values.trayNumber,
     };
 
-    const createdId = await handleCreateBurger(payload);
+    const { orderId, trayNumber } = await handleCreateBurger(payload);
+
     setOrders((currentOrders) => [
       ...currentOrders,
       {
-        id: createdId,
+        id: orderId,
+        trayNumber,
         item: payload.burgerType,
         status: "Queued",
         ingredients: payload.ingredients,
@@ -202,25 +160,36 @@ export default function OrdersPage() {
     ]);
   };
 
-  const handleUpdate = (values: BurgerFormValues) => {
+  const handleUpdate = async (values: BurgerFormValues) => {
     if (!selectedOrderId) {
       return;
     }
 
-    setOrders((currentOrders) => {
-      const nextId = getSafeOrderId(currentOrders, values.id, selectedOrderId);
+    const response = await fetch("/api/orders/update", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ orderId: selectedOrderId, trayNumber: values.trayNumber }),
+    });
 
-      return currentOrders.map((order) =>
+    const data = (await response.json()) as { success?: boolean; error?: string };
+    if (!response.ok || !data.success) {
+      throw new Error(data.error ?? "Failed to update tray number.");
+    }
+
+    setOrders((currentOrders) =>
+      currentOrders.map((order) =>
         order.id === selectedOrderId
           ? {
               ...order,
-              id: nextId,
+              trayNumber: values.trayNumber,
               item: values.item,
               ingredients: values.ingredients,
             }
           : order,
-      );
-    });
+      ),
+    );
   };
 
   const handleDelete = async () => {
@@ -267,12 +236,13 @@ export default function OrdersPage() {
             : orders.map((order) => (
                 <Receipt
                   key={order.id}
-                  id={order.id}
+                  orderId={order.id}
+                  trayNumber={order.trayNumber}
                   item={order.item}
                   ingredients={order.ingredients}
-                  onEdit={(id) => {
+                  onEdit={(orderId) => {
                     setModalMode("edit");
-                    setSelectedOrderId(id);
+                    setSelectedOrderId(orderId);
                     setIsAddBurgerModalOpen(true);
                   }}
                 />
@@ -283,10 +253,12 @@ export default function OrdersPage() {
       <AddBurgerModal
         isOpen={isAddBurgerModalOpen}
         mode={modalMode}
+        suggestedTrayNumber={getNextTrayNumber(orders)}
         initialValues={
           modalMode === "edit" && selectedOrder
             ? {
                 id: selectedOrder.id,
+                trayNumber: selectedOrder.trayNumber,
                 item: selectedOrder.item,
                 ingredients: selectedOrder.ingredients,
               }
