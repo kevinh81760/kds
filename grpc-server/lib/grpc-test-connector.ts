@@ -13,7 +13,7 @@ export const PROTO_PATH = path.join(__dirname, "..", "proto", "connector.proto")
 
 const protoLoaderOptions = {
   keepCase: true,
-  longs: Number,
+  longs: String,
   enums: String,
   defaults: true,
   oneofs: true,

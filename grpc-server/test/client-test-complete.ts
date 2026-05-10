@@ -12,7 +12,7 @@ const ConnectorCtor = loadConnectorServiceConstructor();
 
 interface ConnectorClient extends grpc.Client {
   completeOrder(
-    request: { order_id: number; client_id: number },
+    request: { order_id: string; client_id: string },
     callback: (error: grpc.ServiceError | null, response?: Record<string, unknown>) => void,
   ): grpc.ClientUnaryCall;
 }
@@ -30,7 +30,7 @@ const client = new ConnectorCtor(address, grpc.credentials.createInsecure()) as 
 
 console.log(`Calling CompleteOrder order_id=${orderId} client_id=${clientId} @ ${address}`);
 
-client.completeOrder({ order_id: orderId, client_id: clientId }, (err, response) => {
+client.completeOrder({ order_id: String(orderId), client_id: String(clientId) }, (err, response) => {
   if (err) {
     console.error(`${err.code}: ${err.message}`);
     process.exitCode = 1;

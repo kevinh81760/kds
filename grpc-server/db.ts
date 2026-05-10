@@ -7,6 +7,7 @@
 
 import { config } from "dotenv";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 /**
@@ -15,7 +16,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
  * 2. `.env.local` — overrides `.env` (`override: true`, like Next)
  * 3. `grpc-server/.env` — fills keys that are still unset only (won't stomp root locals)
  */
-const grpcDir = import.meta.dir;
+const grpcDir = path.dirname(fileURLToPath(import.meta.url));
 
 config({ path: path.join(grpcDir, "../.env") });
 config({
@@ -48,18 +49,17 @@ try {
  * Maps DB column `orders.id` → returned shape uses `order_id` only in composite helpers.
  */
 export async function getOrderByTrayNumber(trayNumber: number) {
-  // Same RPC shape as Next.js `src/lib/db/orders.ts` (includes PostgREST error semantics).
+  // Prefer the newest order if multiple rows share the same tray (`.single()` would error).
   const { data, error } = await supabase
     .from("orders")
     .select("*")
     .eq("tray_number", trayNumber)
-    .single();
+    .order("id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   if (error) {
-    // PGRST116 = zero rows (normal NOT_FOUND); anything else is worth printing server-side.
-    if (error.code !== "PGRST116") {
-      console.error("[grpc-server] orders lookup failed:", error.code, error.message);
-    }
+    console.error("[grpc-server] orders lookup failed:", error.code, error.message);
     return null;
   }
 
@@ -79,6 +79,27 @@ export async function getCommandsByOrderId(orderId: number) {
   }
 
   return data;
+}
+
+const COMMAND_CODE_PATTERN = /^\d+_\d+$/;
+
+function isValidCommandCode(code: unknown): code is string {
+  return typeof code === "string" && COMMAND_CODE_PATTERN.test(code);
+}
+
+/** Supabase/PostgREST may return numeric columns as number or string; DB allows null. */
+function normalizeCommandLevel(level: unknown): number | null {
+  if (level === null || level === undefined) {
+    return 0;
+  }
+  if (typeof level === "number" && Number.isFinite(level)) {
+    return level;
+  }
+  if (typeof level === "string" && level.trim() !== "") {
+    const n = Number(level);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
 }
 
 /**
@@ -110,15 +131,32 @@ export async function getOrderForPi(trayNumber: number) {
   }
 
   const commands = await getCommandsByOrderId(order.id);
+  const normalized = commands.map((command) => {
+    const level = normalizeCommandLevel(command.command_level);
+    return {
+      raw: command,
+      level,
+      codeOk: isValidCommandCode(command.command_code),
+      levelOk: level !== null,
+    };
+  });
+
+  const invalidCommand = normalized.find((row) => !row.codeOk || !row.levelOk);
+  if (invalidCommand) {
+    const c = invalidCommand.raw;
+    throw new Error(
+      `Invalid command payload for order ${order.id} command ${c.id}: code=${String(c.command_code)} (expected station_machine e.g. 1_2), level=${String(c.command_level)}`,
+    );
+  }
 
   return {
     order_id: order.id,
     client_id: order.client_id,
     tray_number: order.tray_number,
-    commands: commands.map((command) => ({
-      id: command.id,
-      code: command.command_code,
-      level: command.command_level,
+    commands: normalized.map((row) => ({
+      id: row.raw.id,
+      code: row.raw.command_code,
+      level: row.level as number,
     })),
   };
 }
@@ -128,6 +166,18 @@ export async function getOrderForPi(trayNumber: number) {
  * Requires matching client_id so one tenant cannot complete another's order by id guess.
  */
 export async function completeOrder(orderId: number, clientId: number) {
+  const currentStatus = await getOrderStatus(orderId, clientId);
+
+  if (!currentStatus) {
+    return false;
+  }
+  if (currentStatus === "done") {
+    return true;
+  }
+  if (currentStatus === "failed") {
+    return false;
+  }
+
   const updatedAt = new Date().toISOString();
 
   const { data: updatedRows, error: orderError } = await supabase
@@ -155,6 +205,21 @@ export async function completeOrder(orderId: number, clientId: number) {
 
 type ResultCommand = { id: number; is_disabled: boolean };
 
+async function getOrderStatus(orderId: number, clientId: number): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("orders")
+    .select("status")
+    .eq("id", orderId)
+    .eq("client_id", clientId)
+    .single();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return data.status as string;
+}
+
 /**
  * Mark order failed and patch each command row by id with status + is_disabled.
  * Optional `.eq("order_id", …)` on command updates avoids touching another order's ids.
@@ -165,6 +230,18 @@ export async function markFailedOrder(
   completedCommands: ResultCommand[],
   failedCommands: ResultCommand[],
 ) {
+  const currentStatus = await getOrderStatus(orderId, clientId);
+
+  if (!currentStatus) {
+    return false;
+  }
+  if (currentStatus === "failed") {
+    return true;
+  }
+  if (currentStatus === "done") {
+    return false;
+  }
+
   const updatedAt = new Date().toISOString();
 
   const { data: updatedRows, error: orderError } = await supabase

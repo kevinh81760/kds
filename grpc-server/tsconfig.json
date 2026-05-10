@@ -1,4 +1,6 @@
 {
+  "include": ["./**/*.ts"],
+  "exclude": ["node_modules"],
   "compilerOptions": {
     // Environment setup & latest features
     "lib": ["ESNext"],
@@ -6,6 +8,7 @@
     "module": "Preserve",
     "moduleDetection": "force",
     "allowJs": true,
+    "types": ["bun-types"],
 
     // Bundler mode
     "moduleResolution": "bundler",
